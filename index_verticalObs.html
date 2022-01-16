@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <style>
+        canvas {
+            border: 1px solid #d3d3d3;
+            background: #f1f1f1;
+        }
+    </style>
+</head>
+
+<body>
+    <div style="position:relative;display:inline-block;width: 482px; height: 272px;">
+        <div id="myfilter" style="position: absolute; background-color: rgb(0, 0, 0); opacity: 0.3; width: 482px; height: 272px; display: block;">
+        </div>
+        <div id="myrestartbutton" style="position: absolute;left:50%;top:50%;transform:translate(-50%,-50%);">
+            <button onclick="startGame()">start</button>
+            <div>
+                <div><label for="bg">배경음 <input type="checkbox" id="bgSound" onclick="setBgSound()" checked></label></div>
+                <div><label for="effect">효과음 <input type="checkbox" id="effectSound" onclick="setEffectSound()" checked></label></div>
+            </div>
+        </div>
+        <div id="canvascontainer"></div>
+    </div>
+    
+    <div style="display:inline-block;">
+        <button ontouchstart="accelerate(-0.2)" onmousedown="accelerate(-0.2)" ontouchend="accelerate(0.05)" onmouseup="accelerate(0.05)">ACCELERATE</button><br><br>
+        <!-- <button ontouchstart="move('up')" onmousedown="move('up')" onmouseup="clearmove()">UP</button><br><br>
+        <button ontouchstart="move('left')" onmousedown="move('left')" onmouseup="clearmove()">LEFT</button>
+        <button ontouchstart="move('right')" onmousedown="move('right')" onmouseup="clearmove()">RIGHT</button><br><br>
+        <button ontouchstart="move('down')" onmousedown="move('down')" onmouseup="clearmove()">DOWN</button> -->
+    </div>
+    <script>
+        var is_restart = false;
+        var myGameArea;
+        var myGamePiece;
+        var myObstacles = [];
+        var myscore;
+        var enable_bgSound = true;
+        var enable_effectSound = true;
+
+        function setBgSound(){
+            var bgSound_checkbox = document.querySelector("#bgSound");
+            enable_bgSound = bgSound_checkbox.checked;
+        }
+        function setEffectSound(){
+            var effectSound_checkbox = document.querySelector("#effectSound");
+            enable_effectSound = effectSound_checkbox.checked;
+        }
+
+        function startGame() {
+            document.getElementById("myfilter").style.display = "none";
+            document.getElementById("myrestartbutton").style.display = "none";
+            if(is_restart){                
+                myGameArea.stop();
+                myGameArea.clear();
+                myGameArea = {};
+                myGamePiece = {};
+                myObstacles = [];
+                myscore = {};
+                document.getElementById("canvascontainer").innerHTML = "";
+            }            
+            initGame();
+        }
+
+        function initGame() {
+            myGameArea = new gamearea(50);
+            myGamePiece = new component(30, 30, "red", 10, 75);
+            myGamePiece.gravity = 0.05;
+            myscore = new component("15px", "Consolas", "black", 220, 25, "text");
+            crashSound = new sound("./bounce.mp3");
+            bgSound = new sound("./serenity.mp3");
+            myGameArea.start();            
+            if(enable_bgSound){
+                bgSound.play();
+            } 
+            is_restart = true;
+        }
+
+        /* 
+        canvascontainer에 canvas를 만들어 넣기 
+        canvas context 지우기
+        1초에 50번 인터벌 일어나게 하거나 인터벌을 멈추게 하기 
+        fps : 1초에 frame 갯수        
+        */
+        function gamearea(fps) {
+            this.frameTime = 1000 / fps; // 1초(1000ms) / frame 갯수 = 1frame의 시간(ms)
+            this.canvas = document.createElement("canvas");
+            this.canvas.width = 480;
+            this.canvas.height = 270;
+            document.getElementById("canvascontainer").insertAdjacentElement('afterbegin',this.canvas);
+            this.context = this.canvas.getContext("2d");
+            this.pause;
+            this.frameNo = 0;            
+            this.start = function () {
+                this.pause = false;
+                this.interval = setInterval(updateGameArea, this.frameTime);
+                window.addEventListener("keydown",function(e){                    
+                    if(e.code === "Space"){
+                        accelerate(-0.2);
+                    }                    
+                })
+                window.addEventListener("keyup",function(){
+                    accelerate(0.05);
+                })
+                this.canvas.addEventListener("touchstart",function(){
+                    accelerate(-0.2);
+                },false);
+                this.canvas.addEventListener("touchend",function(){
+                    accelerate(0.05);
+                },false);
+            }
+            this.stop = function () {
+                clearInterval(this.interval);
+                this.pause = true;
+                window.removeEventListener("keydown",function(e){                    
+                    if(e.code === "Space"){
+                        accelerate(-0.2);
+                    }                    
+                })
+                window.removeEventListener("keyup",function(){
+                    accelerate(0.05);
+                })
+            }
+            this.clear = function () {
+                this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+            }
+        }
+
+        function sound(src){
+            this.sound = document.createElement("audio");
+            this.sound.src = src;
+            this.sound.setAttribute("preload","auto");
+            this.sound.setAttribute("controls","none");
+            this.sound.style.display = "none";
+            document.body.insertAdjacentElement('afterbegin',this.sound);
+            this.play = function(){
+                this.sound.play();
+            }
+            this.stop = function(){
+                this.sound.pause();
+            }
+        }
+
+        /* 
+        gamepiece, obstacle, score 만드는 클래스
+        update draw
+        crash 체크 
+        */
+        function component(width, height, color, x, y, type) {
+            this.type = type;
+            if (type == "text") {
+                this.text = "";
+            }
+            //this.score = 0; 
+            this.width = width;
+            this.height = height;
+            this.speedX = 0;
+            this.speedY = 0;
+            this.x = x;
+            this.y = y;
+            this.gravity = 0;
+            this.gravitySpeed = 0;
+            this.updateDraw = function () {
+                ctx = myGameArea.context;
+                if (this.type == "text") {
+                    ctx.font = this.width + " " + this.height; // font-size font-family
+                    ctx.fillStyle = color;
+                    ctx.fillText(this.text, this.x, this.y);
+                } else {
+                    ctx.fillStyle = color;
+                    ctx.fillRect(this.x, this.y, this.width, this.height);
+                }
+            }
+            this.newPos = function(){
+                this.gravitySpeed += this.gravity;
+                this.y += this.speedY + this.gravitySpeed;
+                this.hitBottom();
+            }
+            this.hitBottom = function(){
+                var rockbottom = myGameArea.canvas.height - this.height;
+                if(this.y > rockbottom){
+                    this.y = rockbottom;
+                    this.gravitySpeed = 0;
+                }else if(this.y < 0){
+                    this.y = 0;
+                    this.gravity = 0.05;
+                    this.gravitySpeed = 0;
+                }
+            }
+            this.crashWith = function (otherobj) {
+                var myleft = this.x;
+                var myright = this.x + (this.width);
+                var mytop = this.y;
+                var mybottom = this.y + (this.height);
+                var otherleft = otherobj.x;
+                var otherright = otherobj.x + (otherobj.width);
+                var othertop = otherobj.y;
+                var otherbottom = otherobj.y + (otherobj.height);
+                var crash = true;
+                if ((mybottom < othertop) || (mytop > otherbottom) || (myright < otherleft) || (myleft > otherright)) {
+                    crash = false;
+                }
+                return crash;
+            }
+        }
+
+        /* 
+        프레임 진행
+        게임이 진행되는 중이면 장애물 만들기
+        장애물들의 crash 체크 : crash 되면 게임 멈추고, restart 버튼 나타내기 
+        스코어 업데이트
+        gamepiece 위치 업데이트
+        */
+        function updateGameArea() {
+            var x, y, min, max, height, gap;
+            for (i = 0; i < myObstacles.length; i += 1) {
+                if (myGamePiece.crashWith(myObstacles[i])) {
+                    if(enable_effectSound){
+                        crashSound.play(); 
+                    } 
+                    bgSound.stop();  
+                    myGameArea.stop();
+                    document.getElementById("myfilter").style.display = "block";
+                    document.querySelector("#myrestartbutton button").textContent = "restart";
+                    document.getElementById("myrestartbutton").style.display = "block";
+                    return;
+                }
+            }
+            if (myGameArea.pause == false) {
+                myGameArea.clear();
+                myGameArea.frameNo += 1;
+                //myscore.score += 1;
+                if (myGameArea.frameNo == 1 || everyinterval(150)) { //150프레임마다 장애물 만들기
+                    x = myGameArea.canvas.width;
+                    y = myGameArea.canvas.height;
+                    min = 20;
+                    max = 100;
+                    height = Math.floor(Math.random() * (max - min + 1) + min);
+                    min = 50;
+                    max = 200;
+                    gap = Math.floor(Math.random() * (max - min + 1) + min);
+                    myObstacles.push(new component(10, height, "green", x, 0));
+                    myObstacles.push(new component(10, y - height - gap, "green", x, height + gap));
+                }
+                for (i = 0; i < myObstacles.length; i += 1) {
+                    myObstacles[i].x += -1;
+                    myObstacles[i].updateDraw();
+                }
+                //myscore.text = "SCORE : " + myscore.score;
+                var sec = Math.floor(myGameArea.frameTime * myGameArea.frameNo / 1000);
+                myscore.text = (sec === 0) ? '':sec;
+                myscore.updateDraw();
+                myGamePiece.x += myGamePiece.speedX;
+                myGamePiece.y += myGamePiece.speedY;
+                myGamePiece.newPos();
+                myGamePiece.updateDraw();
+            }
+        }
+
+        function everyinterval(n) {
+            if ((myGameArea.frameNo / n) % 1 == 0) { return true; }
+            return false;
+        }
+
+        function move(dir) {            
+            if (dir == "up") {myGamePiece.speedY = -1; }
+            if (dir == "down") {myGamePiece.speedY = 1; }
+            if (dir == "left") {myGamePiece.speedX = -1; }
+            if (dir == "right") {myGamePiece.speedX = 1; }
+        }
+
+        function clearmove(e) {
+            myGamePiece.speedX = 0;
+            myGamePiece.speedY = 0;
+        }
+        
+        function accelerate(n){
+            myGamePiece.gravity = n;
+        }
+
+    </script>
+
+</body>
+
+</html>
